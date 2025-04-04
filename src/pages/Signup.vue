@@ -40,6 +40,11 @@
           <button @click="signin">Sign In</button>
         </p>
         <p>
+          <button @click="forgotPassword" class="forgot-password-button">
+            Forgot Password?
+          </button>
+        </p>
+        <p>
           <button @click="signInWithGoogle">Sign in with Google</button>
         </p>
       </div>
@@ -54,7 +59,8 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   GoogleAuthProvider,
-  signInWithPopup
+  signInWithPopup,
+  sendPasswordResetEmail
 } from "firebase/auth";
 import { getFirestore, doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { useRouter } from "vue-router";
@@ -72,15 +78,55 @@ const signinPassword = ref("");
 
 const router = useRouter();
 
-// Register new user
-const register = () => {
+/**
+ * 
+ * @param {string} password
+ * @returns {Promise<number>} The number of times the password has been seen in breaches.
+ */
+async function checkPasswordCompromised(password) {
+  // Encode and compute SHA-1 hash
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
+  const hashBuffer = await crypto.subtle.digest("SHA-1", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, "0")).join("").toUpperCase();
+
+  // Split the hash into prefix and suffix
+  const prefix = hashHex.slice(0, 5);
+  const suffix = hashHex.slice(5);
+
+  // Query the API with the prefix
+  const response = await fetch(`https://api.pwnedpasswords.com/range/${prefix}`);
+  const responseText = await response.text();
+
+  // Check the API response for the suffix
+  const compromisedEntry = responseText
+    .split("\n")
+    .find(line => line.split(":")[0] === suffix);
+
+  // Return the count (or 0 if not found)
+  return compromisedEntry ? parseInt(compromisedEntry.split(":")[1]) : 0;
+}
+
+// Register new user with compromised password check
+const register = async () => {
+  // Check if the password is compromised before registering
+  const count = await checkPasswordCompromised(password.value);
+  if (count > 0) {
+    alert(
+      `This password has been seen ${count} times before in data breaches. Please choose a different password.`
+    );
+    return;
+  }
+
+  // Proceed with user registration if the password is safe
   createUserWithEmailAndPassword(getAuth(), email.value, password.value)
     .then(async (data) => {
       console.log("Successfully registered!", data);
       const db = getFirestore();
-      // Create a user document in the "users" collection with the user's UID as the document ID
       await setDoc(doc(db, "users", data.user.uid), {
         email: data.user.email,
+        username: data.user.email.split("@")[0],
         createdAt: serverTimestamp()
       });
       router.push("/feed");
@@ -104,31 +150,38 @@ const signin = () => {
     });
 };
 
-// Sign in with Google (updated to create/update Firestore user document)
+// Forgot password function
+const forgotPassword = () => {
+  if (!signinEmail.value) {
+    alert("Please enter your email address to reset your password.");
+    return;
+  }
+  sendPasswordResetEmail(getAuth(), signinEmail.value)
+    .then(() => {
+      alert("Password reset email sent! Check your inbox.");
+    })
+    .catch((error) => {
+      console.log(error.code);
+      alert(error.message);
+    });
+};
+
+// Sign in with Google
 const signInWithGoogle = () => {
   const provider = new GoogleAuthProvider();
   signInWithPopup(getAuth(), provider)
     .then(async (result) => {
       console.log("Google sign in successful", result.user);
       const db = getFirestore();
-      // Option 1: Always create or update the user document
       await setDoc(
         doc(db, "users", result.user.uid),
         {
           email: result.user.email,
+          username: result.user.email.split("@")[0],
           createdAt: serverTimestamp()
         },
         { merge: true }
       );
-      
-      // Option 2: Only create the document if the user is new
-      // if (result.additionalUserInfo?.isNewUser) {
-      //   await setDoc(doc(db, "users", result.user.uid), {
-      //     email: result.user.email,
-      //     createdAt: serverTimestamp()
-      //   });
-      // }
-      
       router.push("/feed");
     })
     .catch((error) => {
@@ -213,5 +266,17 @@ button {
 
 button:hover {
   opacity: 0.8;
+}
+
+/* Optional styling for the forgot password button */
+.forgot-password-button {
+  background: none;
+  border: none;
+  color: #6a11cb;
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
 }
 </style>

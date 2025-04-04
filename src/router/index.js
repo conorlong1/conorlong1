@@ -4,12 +4,12 @@ const router = createRouter({
     history: createWebHistory(),
     routes: [
       //  { path: "/", component: () => import("../pages/Register.vue") },
-        { path: "/", component: () => import("../components/Signup.vue")},
-        { path: "/Dashboard" , component: () => import("../pages/Signin.vue")},
+        { path: "/", component: () => import("../pages/Signup.vue")},
+        //{ path: "/Dashboard" , component: () => import("../pages/feed.vue")},
       //  { path: "/Sign" , component: () => import("../components/Signup.vue") },
         { 
             path: "/feed",
-            component: () => import("../pages/feed.vue"),
+            component: () => import("../pages/test.vue"),
             meta: {
                 requiresAuth: true,
             },
